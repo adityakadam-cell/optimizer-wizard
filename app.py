@@ -176,9 +176,17 @@ def api_optimize():
         retry = d.get("retry_count", 0)
 
         # 1. Baseline PageSpeed audit on the LIVE url
+        # auditor = PageSpeedAuditor(api_key=PAGESPEED_API_KEY or None)
+        # mobile = auditor.audit(url, "mobile")
+        # desktop = auditor.audit(url, "desktop")
+        from concurrent.futures import ThreadPoolExecutor
         auditor = PageSpeedAuditor(api_key=PAGESPEED_API_KEY or None)
-        mobile = auditor.audit(url, "mobile")
-        desktop = auditor.audit(url, "desktop")
+        # Run mobile + desktop audits in parallel to stay under Render's proxy timeout.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            mobile_future = pool.submit(auditor.audit, url, "mobile")
+            desktop_future = pool.submit(auditor.audit, url, "desktop")
+            mobile = mobile_future.result()
+            desktop = desktop_future.result()
 
         # Use the lower of mobile/desktop as our baseline (harder case to beat)
         baseline_scores = []
