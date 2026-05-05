@@ -61,28 +61,73 @@
   {% endif %}
 
   <h2>Manual fixes still required</h2>
-  <p>These items cannot be fixed from inside the HTML file alone. They need server or build-tool changes on your end.</p>
+  <p>These items cannot be fixed from inside the HTML file alone — they need server, CDN, or build-tool changes on your end. Click any fix to expand step-by-step instructions for your hosting environment.</p>
 
-  <table class="manual-fixes">
-    <thead>
-      <tr><th>#</th><th>Fix</th><th>Where</th><th>How</th><th style="text-align:right">Impact</th></tr>
-    </thead>
-    <tbody>
-      {% for f in manual_fixes %}
-      <tr>
-        <td>{{ f.index }}</td>
-        <td><strong>{{ f.title }}</strong></td>
-        <td><span class="tag">{{ f.category }}</span></td>
-        <td>{{ f.details }}</td>
-        <td style="text-align:right">
+  <div class="manual-fixes-list">
+    {% for f in manual_fixes %}
+    <details class="fix-card">
+      <summary class="fix-summary">
+        <span class="fix-index">{{ f.index }}</span>
+        <span class="fix-title">{{ f.title }}</span>
+        <span class="tag">{{ f.category }}</span>
+        <span class="fix-impact">
           {% if f.impact_ms and f.impact_ms > 0 %}
-            ~{{ '%.1f' % (f.impact_ms/1000) }}s
-          {% else %}—{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+            ~{{ '%.1f' % (f.impact_ms/1000) }}s saving
+          {% else %}
+            recommended
+          {% endif %}
+        </span>
+        <span class="fix-toggle">▼</span>
+      </summary>
+
+      <div class="fix-body">
+        {% if f.what %}
+          <div class="fix-block">
+            <h4>What this is</h4>
+            <p>{{ f.what }}</p>
+          </div>
+        {% endif %}
+
+        {% if f.why %}
+          <div class="fix-block">
+            <h4>Why it matters</h4>
+            <p>{{ f.why }}</p>
+          </div>
+        {% endif %}
+
+        {% if f.warning %}
+          <div class="fix-warning">
+            <strong>⚠ Important:</strong> {{ f.warning }}
+          </div>
+        {% endif %}
+
+        {% if f.how %}
+          <div class="fix-block">
+            <h4>How to do it</h4>
+            <p class="hint">Pick the environment that matches your setup. Skip the others.</p>
+            {% for env in f.how %}
+              <div class="fix-env">
+                <h5>{{ env.env }}</h5>
+                <ol>
+                  {% for step in env.steps %}
+                    <li>{{ step }}</li>
+                  {% endfor %}
+                </ol>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if f.verify %}
+          <div class="fix-block fix-verify">
+            <h4>How to verify it worked</h4>
+            <p>{{ f.verify }}</p>
+          </div>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
 
   <div class="actions-row">
     <a href="{{ url_for('step2') }}" class="btn">← Edit HTML</a>
