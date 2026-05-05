@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set current_step = 1 %}
+{% block title %}Step 1 — Enter URL{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 1 · Enter your website URL</h1>
+  <p class="lead">We'll audit this URL with Google PageSpeed Insights to establish a baseline score.</p>
+
+  <form method="POST" class="form">
+    <label for="url" class="label">Website URL</label>
+    <input type="text" id="url" name="url" placeholder="https://example.com" autofocus
+           autocomplete="off" spellcheck="false" required>
+    <div class="hint">Include <code>https://</code>. If you skip it, we'll add it.</div>
+
+    <div class="actions">
+      <button type="submit" class="btn primary">Next →</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

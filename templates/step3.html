@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set current_step = 3 %}
+{% block title %}Step 3 — Optimizing{% endblock %}
+
+{% block content %}
+<div class="card processing">
+  <h1>Step 3 · Verifying & Optimizing</h1>
+
+  <div class="spinner"></div>
+
+  <ul class="progress-list" id="progressList">
+    <li data-id="1" class="current">Verifying pasted HTML…</li>
+    <li data-id="2">Running PageSpeed Insights audit (mobile)…</li>
+    <li data-id="3">Running PageSpeed Insights audit (desktop)…</li>
+    <li data-id="4">Applying HTML optimisations…</li>
+    <li data-id="5">Estimating projected score…</li>
+  </ul>
+
+  <p class="hint">
+    This typically takes 30-90 seconds.
+    PageSpeed's live audit is what's slow — the optimization itself is fast.
+  </p>
+
+  <div id="errorBox" class="flash error" style="display:none"></div>
+</div>
+
+<script>
+  // Walk through the progress list for visual feedback while the real work happens server-side.
+  const items = [...document.querySelectorAll('#progressList li')];
+  let idx = 0;
+  const advance = setInterval(() => {
+    if (idx < items.length - 1) {
+      items[idx].classList.remove('current');
+      items[idx].classList.add('done');
+      idx++;
+      items[idx].classList.add('current');
+    }
+  }, 8000);
+
+  fetch('{{ url_for("api_optimize") }}', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      clearInterval(advance);
+      if (data.error) {
+        const box = document.getElementById('errorBox');
+        box.style.display = 'block';
+        box.textContent = 'Error: ' + data.error;
+        return;
+      }
+      items.forEach(li => { li.classList.remove('current'); li.classList.add('done'); });
+      setTimeout(() => { window.location.href = data.redirect; }, 400);
+    })
+    .catch(err => {
+      clearInterval(advance);
+      const box = document.getElementById('errorBox');
+      box.style.display = 'block';
+      box.textContent = 'Network error: ' + err;
+    });
+</script>
+{% endblock %}

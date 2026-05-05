@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% set current_step = 4 %}
+{% block title %}Step 4 — Review{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 4 · Review results</h1>
+  <p class="lead">URL audited: <strong>{{ url }}</strong>
+    {% if retry_count > 0 %}<span class="badge">Re-optimize pass #{{ retry_count }}</span>{% endif %}
+  </p>
+
+  <div class="scoreboard">
+    <div class="score-card">
+      <div class="score-label">Baseline (Mobile)</div>
+      <div class="score-value {{ 'good' if (baseline_mobile or 0) >= 90 else 'bad' if (baseline_mobile or 0) < 50 else 'mid' }}">
+        {{ baseline_mobile if baseline_mobile is not none else '—' }}
+      </div>
+    </div>
+    <div class="score-card">
+      <div class="score-label">Baseline (Desktop)</div>
+      <div class="score-value {{ 'good' if (baseline_desktop or 0) >= 90 else 'bad' if (baseline_desktop or 0) < 50 else 'mid' }}">
+        {{ baseline_desktop if baseline_desktop is not none else '—' }}
+      </div>
+    </div>
+    <div class="score-arrow">→</div>
+    <div class="score-card prediction">
+      <div class="score-label">Estimated after optimization</div>
+      <div class="score-value {{ 'good' if estimated >= 90 else 'bad' if estimated < 50 else 'mid' }}">
+        {{ estimated }}
+      </div>
+    </div>
+  </div>
+
+  <p class="estimate-note">
+    <small>
+      <strong>How the estimate is computed:</strong> the baseline is the real PageSpeed score of your live URL.
+      The "after" score adds heuristic point-gains for each optimisation applied, capped by the savings PageSpeed
+      actually reported as addressable. <strong>It is an estimate, not a verified score.</strong>
+      To get a verified score, deploy the optimized HTML and re-run the wizard with your URL.
+    </small>
+  </p>
+
+  {% if passed %}
+    <div class="verdict pass">
+      ✓ Estimated score {{ estimated }} meets the {{ threshold }}+ threshold.
+    </div>
+  {% else %}
+    <div class="verdict fail">
+      ✗ Estimated score {{ estimated }} is below the {{ threshold }}+ threshold.
+      Address the manual fixes below and/or run another optimization pass.
+    </div>
+  {% endif %}
+
+  <h2>What was changed automatically</h2>
+  {% if changes %}
+    <ul class="changes">
+      {% for c in changes %}<li>{{ c }}</li>{% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">No changes were applied — the HTML may already be well-optimized.</p>
+  {% endif %}
+
+  <h2>Manual fixes still required</h2>
+  <p>These items cannot be fixed from inside the HTML file alone. They need server or build-tool changes on your end.</p>
+
+  <table class="manual-fixes">
+    <thead>
+      <tr><th>#</th><th>Fix</th><th>Where</th><th>How</th><th style="text-align:right">Impact</th></tr>
+    </thead>
+    <tbody>
+      {% for f in manual_fixes %}
+      <tr>
+        <td>{{ f.index }}</td>
+        <td><strong>{{ f.title }}</strong></td>
+        <td><span class="tag">{{ f.category }}</span></td>
+        <td>{{ f.details }}</td>
+        <td style="text-align:right">
+          {% if f.impact_ms and f.impact_ms > 0 %}
+            ~{{ '%.1f' % (f.impact_ms/1000) }}s
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="actions-row">
+    <a href="{{ url_for('step2') }}" class="btn">← Edit HTML</a>
+
+    {% if passed %}
+      <a href="{{ url_for('step5') }}" class="btn primary">Next — Get optimized code →</a>
+    {% else %}
+      <form method="POST" action="{{ url_for('reoptimize') }}" style="display:inline">
+        <button type="submit" class="btn primary">Re-optimize ({{ retry_count + 1 }}/3)</button>
+      </form>
+      {% if retry_count >= 2 %}
+        <form method="POST" action="{{ url_for('force_proceed') }}" style="display:inline">
+          <button type="submit" class="btn">Proceed anyway →</button>
+        </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

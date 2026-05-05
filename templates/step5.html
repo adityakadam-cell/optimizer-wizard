@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set current_step = 5 %}
+{% block title %}Step 5 — Optimized Code{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 5 · Your optimized HTML</h1>
+  {% if passed %}
+    <p class="verdict pass">✓ Estimated PageSpeed score: <strong>{{ estimated }}</strong> · Ready to deploy.</p>
+  {% elif forced %}
+    <p class="verdict fail">
+      ⚠ You chose to proceed with an estimated score of {{ estimated }}.
+      Address the manual fixes from the previous step on your server to reach 90+.
+    </p>
+  {% endif %}
+
+  <div class="toolbar">
+    <button id="copyBtn" class="btn primary">📋 Copy code</button>
+    <button id="downloadBtn" class="btn">⬇ Download as index.html</button>
+    <a href="https://pagespeed.web.dev/analysis?url={{ url }}" target="_blank" rel="noopener" class="btn">
+      🔍 Re-test at pagespeed.web.dev
+    </a>
+    <a href="{{ url_for('restart') }}" class="btn">↺ Start over</a>
+  </div>
+
+  <textarea id="optimizedCode" rows="28" spellcheck="false" readonly>{{ html }}</textarea>
+  <div class="hint" id="codeStats"></div>
+
+  <div class="next-steps">
+    <h2>Next steps</h2>
+    <ol>
+      <li><strong>Copy</strong> the code above and replace your live HTML with it. <strong>Test on staging first.</strong></li>
+      <li>Convert your site's images to WebP (see manual fixes on the previous step). Upload the new .webp files to the paths referenced in the <code>&lt;picture&gt;</code> tags.</li>
+      <li>Apply server-side fixes (gzip/brotli, cache headers, CDN) from the manual fixes list.</li>
+      <li>Click <em>Re-test at pagespeed.web.dev</em> above to verify the real score.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const code = document.getElementById('optimizedCode');
+  const stats = document.getElementById('codeStats');
+  const lines = code.value.split('\n').length;
+  stats.textContent = `${lines.toLocaleString()} lines · ${code.value.length.toLocaleString()} characters`;
+
+  document.getElementById('copyBtn').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(code.value);
+      const btn = document.getElementById('copyBtn');
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      btn.classList.add('success');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('success'); }, 2000);
+    } catch (e) {
+      // Fallback for older browsers
+      code.select();
+      document.execCommand('copy');
+      alert('Code copied to clipboard.');
+    }
+  });
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    const blob = new Blob([code.value], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'index-optimized.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+</script>
+{% endblock %}

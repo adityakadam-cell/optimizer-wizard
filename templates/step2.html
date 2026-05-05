@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set current_step = 2 %}
+{% block title %}Step 2 — Paste HTML{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Step 2 · Paste your HTML source</h1>
+  <p class="lead">
+    Target URL: <strong>{{ url }}</strong>
+  </p>
+  <p>Paste the full HTML source of the page. (Up to 5 MB — plenty of room for a 6000-line file.)</p>
+
+  <form method="POST" class="form" id="htmlForm">
+    <label for="html" class="label">HTML code</label>
+    <textarea id="html" name="html" rows="22" spellcheck="false" required
+              placeholder="<!DOCTYPE html>&#10;<html>&#10;  <head>...</head>&#10;  <body>...</body>&#10;</html>">{{ html or '' }}</textarea>
+
+    <div class="hint" id="lineCount">0 lines · 0 characters</div>
+
+    <div class="actions">
+      <a href="{{ url_for('step1') }}" class="btn">← Back</a>
+      <button type="submit" class="btn primary">Next →</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  const ta = document.getElementById('html');
+  const counter = document.getElementById('lineCount');
+  function updateCount() {
+    const v = ta.value;
+    const lines = v ? v.split('\n').length : 0;
+    counter.textContent = `${lines.toLocaleString()} lines · ${v.length.toLocaleString()} characters`;
+  }
+  ta.addEventListener('input', updateCount);
+  updateCount();
+</script>
+{% endblock %}

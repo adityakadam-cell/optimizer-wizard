@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Website Optimization Wizard{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">⚡ Website Optimizer</div>
+  <a class="restart-link" href="{{ url_for('restart') }}">Start over</a>
+</header>
+
+<div class="stepper">
+  {% set current = current_step | default(0) %}
+  {% for label in ['URL', 'Paste HTML', 'Optimize', 'Review', 'Copy Code'] %}
+    {% set n = loop.index %}
+    <div class="step {% if n < current %}done{% elif n == current %}active{% endif %}">
+      <span class="step-number">{{ n }}</span>
+      <span class="step-label">{{ label }}</span>
+    </div>
+    {% if not loop.last %}<div class="step-line {% if n < current %}done{% endif %}"></div>{% endif %}
+  {% endfor %}
+</div>
+
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, msg in messages %}
+        <div class="flash {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <small>Runs locally · Uses Google PageSpeed Insights API · <a href="https://pagespeed.web.dev/" target="_blank" rel="noopener">pagespeed.web.dev</a></small>
+</footer>
+</body>
+</html>

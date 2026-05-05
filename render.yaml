@@ -1,0 +1,26 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# To deploy:
+#   1. Push this repo to GitHub.
+#   2. Go to https://dashboard.render.com/blueprints and click "New Blueprint".
+#   3. Connect this repo. Render will pick up render.yaml automatically.
+#   4. In the Render dashboard, set the PAGESPEED_API_KEY env var (Settings → Environment).
+#   5. Click Deploy. You'll get a URL like https://optimizer-wizard.onrender.com.
+
+services:
+  - type: web
+    name: optimizer-wizard
+    runtime: python
+    region: oregon            # closest to most users; change as needed
+    plan: free                # upgrade to "starter" ($7/mo) to avoid cold starts
+    buildCommand: pip install -r requirements.txt
+    # Single worker is intentional — see app.py / README.md.
+    startCommand: gunicorn wsgi:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT --timeout 200
+    healthCheckPath: /healthz
+    envVars:
+      - key: PAGESPEED_API_KEY
+        sync: false           # set this manually in the Render dashboard
+      - key: FLASK_SECRET_KEY
+        generateValue: true   # Render auto-generates a stable random value
+      - key: PYTHON_VERSION
+        value: "3.11"
