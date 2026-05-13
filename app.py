@@ -2,15 +2,16 @@
 Website Optimization Wizard — Flask app entry point.
 
 A 5-step web wizard:
-  1. Enter URL
+  1. Enter URL + email (email used by Step 4's "Email me the report" button)
   2. Paste HTML source
   3. Verify HTML + run PageSpeed audit on the live URL + optimize HTML
-  4. Show results; if estimated score >= 90, Next appears; else re-optimize
-  5. Show the final optimized code with Copy + Download buttons
+  4. Show real mobile/desktop scores from PageSpeed + manual fixes
+     ("the perfect solution"). User can email themselves the full report.
+  5. Show the final optimized code with Copy + Download buttons.
 
 Local dev:
     pip install -r requirements.txt
-    cp .env.example .env   # fill in PAGESPEED_API_KEY
+    cp .env.example .env   # fill in PAGESPEED_API_KEY + GMAIL_* vars
     python app.py          # http://localhost:5000
 
 Production: see README.md (Docker / Render / Gunicorn).
@@ -34,8 +35,12 @@ try:
 except ImportError:
     pass
 
-from optimizer import HTMLOptimizer, verify_html, estimate_after_score, get_manual_fixes
+from optimizer import HTMLOptimizer, verify_html, get_manual_fixes
 from pagespeed import PageSpeedAuditor
+from emailer import (
+    is_valid_email, send_report,
+    EmailNotConfigured, EmailSendFailed,
+)
 
 # ----- Logging -----
 logging.basicConfig(
@@ -45,9 +50,6 @@ logging.basicConfig(
 log = logging.getLogger("optimizer")
 
 # ----- Configuration -----
-# IMPORTANT: never hardcode the PageSpeed API key. Set it via environment.
-# Without a key the app still works but Google rate-limits to ~1 query/sec
-# per IP, which means audits will fail quickly under team usage.
 PAGESPEED_API_KEY = (os.environ.get("PAGESPEED_API_KEY") or "").strip()
 if not PAGESPEED_API_KEY:
     log.warning(
@@ -55,19 +57,29 @@ if not PAGESPEED_API_KEY:
         "audits will be rate-limited. Set the env var or create a .env file."
     )
 
-MAX_HTML_BYTES = int(os.environ.get("MAX_HTML_BYTES", 5 * 1024 * 1024))  # 5 MB default
-SCORE_PASS_THRESHOLD = int(os.environ.get("SCORE_PASS_THRESHOLD", 90))
+# Warn early if Gmail isn't configured. The /api/send-report route handles
+# the error gracefully, but a startup warning makes the misconfiguration
+# obvious in Render logs.
+if not os.environ.get("GMAIL_USER") or not os.environ.get("GMAIL_APP_PASSWORD"):
+    log.warning(
+        "GMAIL_USER and/or GMAIL_APP_PASSWORD are not set. The 'Email me the "
+        "report' button will fail until both are configured. See README.md "
+        "for the Gmail App Password setup."
+    )
 
-# Flask secret key. Generate a stable one for production via:
-#   python -c "import secrets; print(secrets.token_hex(32))"
-# and set FLASK_SECRET_KEY. Without it we generate a random one per process,
-# which means sessions don't survive a restart — fine for a small team tool.
+MAX_HTML_BYTES = int(os.environ.get("MAX_HTML_BYTES", 5 * 1024 * 1024))  # 5 MB default
+
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 
 # ----- App -----
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY
-app.config["MAX_CONTENT_LENGTH"] = MAX_HTML_BYTES + 1024
+
+# IMPORTANT: form-encoded HTML bodies inflate ~30–60% over raw size because
+# every <, >, ", and newline becomes a 3-char escape. A 5 MB HTML can produce
+# an 8 MB POST body. Allow 3x the raw cap + headroom for headers/other fields
+# so users hit our friendly "HTML too large" flash, not Flask's bare 413.
+app.config["MAX_CONTENT_LENGTH"] = MAX_HTML_BYTES * 3 + 64 * 1024
 
 # In-memory per-session HTML store. Default Flask cookies cap at 4 KB which
 # can't hold pasted HTML, so we keep blobs server-side and only put a session
@@ -111,21 +123,50 @@ def healthz():
     return {"status": "ok"}, 200
 
 
-# ---- Step 1: URL ----
+@app.errorhandler(413)
+def handle_too_large(e):
+    """Flask raises this BEFORE the view runs when the request body exceeds
+    MAX_CONTENT_LENGTH. Redirect to step 2 with a friendly flash instead of
+    showing the bare HTML 413 page."""
+    flash(
+        f"The pasted HTML is too large to upload. The limit is "
+        f"{MAX_HTML_BYTES // (1024 * 1024)} MB of HTML.",
+        "error",
+    )
+    return redirect(url_for("step2"))
+
+
+# ---- Step 1: URL + Email ----
 @app.route("/step1", methods=["GET", "POST"])
 def step1():
     if request.method == "POST":
         url = (request.form.get("url") or "").strip()
+        email = (request.form.get("email") or "").strip()
+
         if not url:
             flash("Please enter a URL.", "error")
-            return render_template("step1.html")
+            return render_template("step1.html", url=url, email=email)
+        if not email:
+            flash("Please enter your email address.", "error")
+            return render_template("step1.html", url=url, email=email)
+        if not is_valid_email(email):
+            flash("That email address doesn't look valid.", "error")
+            return render_template("step1.html", url=url, email=email)
+
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+
         d = sdata()
         d["url"] = url
-        d["retry_count"] = 0
+        d["email"] = email
+        # New URL — clear any cached optimization from a previous run.
+        d.pop("optimized_html", None)
+        d.pop("html", None)
         return redirect(url_for("step2"))
-    return render_template("step1.html")
+
+    # Pre-fill from session if user hit Back.
+    d = sdata()
+    return render_template("step1.html", url=d.get("url", ""), email=d.get("email", ""))
 
 
 # ---- Step 2: Paste HTML code ----
@@ -141,7 +182,7 @@ def step2():
             flash("Please paste your HTML code.", "error")
             return render_template("step2.html", url=d["url"])
         if len(html.encode("utf-8")) > MAX_HTML_BYTES:
-            flash(f"HTML too large (max {MAX_HTML_BYTES // 1024} KB).", "error")
+            flash(f"HTML too large (max {MAX_HTML_BYTES // (1024 * 1024)} MB).", "error")
             return render_template("step2.html", url=d["url"], html=html)
 
         ok, err = verify_html(html)
@@ -150,6 +191,8 @@ def step2():
             return render_template("step2.html", url=d["url"], html=html)
 
         d["html"] = html
+        # New paste invalidates any cached optimization from earlier.
+        d.pop("optimized_html", None)
         return redirect(url_for("step3"))
 
     return render_template("step2.html", url=d.get("url"), html=d.get("html", ""))
@@ -170,53 +213,55 @@ def api_optimize():
     if "html" not in d or "url" not in d:
         return jsonify({"error": "session expired"}), 400
 
+    # Idempotency: if the user refreshes step 3 the script re-fires this fetch.
+    # Don't pay for a second PageSpeed audit — return the cached result.
+    if d.get("optimized_html"):
+        return jsonify({"ok": True, "redirect": url_for("step4")})
+
     try:
         url = d["url"]
         html = d["html"]
-        retry = d.get("retry_count", 0)
 
-        # 1. Baseline PageSpeed audit on the LIVE url
-        # auditor = PageSpeedAuditor(api_key=PAGESPEED_API_KEY or None)
-        # mobile = auditor.audit(url, "mobile")
-        # desktop = auditor.audit(url, "desktop")
+        # 1. Baseline PageSpeed audit on the LIVE url — mobile + desktop in
+        # parallel so we stay under Render's proxy timeout.
         from concurrent.futures import ThreadPoolExecutor
         auditor = PageSpeedAuditor(api_key=PAGESPEED_API_KEY or None)
-        # Run mobile + desktop audits in parallel to stay under Render's proxy timeout.
         with ThreadPoolExecutor(max_workers=2) as pool:
             mobile_future = pool.submit(auditor.audit, url, "mobile")
             desktop_future = pool.submit(auditor.audit, url, "desktop")
             mobile = mobile_future.result()
             desktop = desktop_future.result()
 
-        # Use the lower of mobile/desktop as our baseline (harder case to beat)
-        baseline_scores = []
-        audit_for_opps = mobile or desktop
-        if mobile and mobile["scores"].get("performance") is not None:
-            baseline_scores.append(mobile["scores"]["performance"])
-        if desktop and desktop["scores"].get("performance") is not None:
-            baseline_scores.append(desktop["scores"]["performance"])
-        baseline = min(baseline_scores) if baseline_scores else 50
+        # If BOTH audits failed, fail honestly — don't fabricate a result.
+        if mobile is None and desktop is None:
+            return jsonify({
+                "error": (
+                    "PageSpeed audit failed for both mobile and desktop. "
+                    "Check that the URL is publicly reachable and try again. "
+                    "(If you hit Google's rate limit, set PAGESPEED_API_KEY.)"
+                ),
+            }), 502
 
-        # 2. Optimize the HTML (more aggressive on retry)
-        aggressive = retry > 0
-        opt = HTMLOptimizer(html, url, aggressive=aggressive)
+        audit_for_opps = mobile or desktop
+
+        # 2. Optimize the HTML
+        opt = HTMLOptimizer(html, url, aggressive=False)
         optimized = opt.optimize()
 
-        # 3. Estimate improvement
-        estimated = estimate_after_score(baseline, opt.changes, audit_for_opps)
-
-        # 4. Manual fixes (things the script cannot fix by itself)
+        # 3. Manual fixes — "the perfect solution" shown when below 90
         manual_fixes = get_manual_fixes(audit_for_opps, opt.changes)
 
-        # Persist
+        # Persist everything Step 4 / Step 5 / email-sending will need
         d["optimized_html"] = optimized
         d["baseline_mobile"] = mobile["scores"].get("performance") if mobile else None
         d["baseline_desktop"] = desktop["scores"].get("performance") if desktop else None
-        d["estimated_score"] = estimated
         d["changes"] = opt.changes
         d["manual_fixes"] = manual_fixes
         d["opportunities"] = audit_for_opps["opportunities"] if audit_for_opps else []
         d["metrics"] = audit_for_opps["metrics"] if audit_for_opps else {}
+        # Reset the "email already sent" flag so a fresh optimization can
+        # be emailed again.
+        d.pop("email_sent_to", None)
 
         return jsonify({"ok": True, "redirect": url_for("step4")})
     except Exception as e:
@@ -231,41 +276,63 @@ def step4():
     if "optimized_html" not in d:
         return redirect(url_for("step1"))
 
-    passed = (d.get("estimated_score") or 0) >= SCORE_PASS_THRESHOLD
+    mobile = d.get("baseline_mobile")
+    desktop = d.get("baseline_desktop")
+    # "Below 90" — the trigger to show manual fixes as "the perfect solution"
+    below_90 = (
+        (mobile is not None and mobile < 90)
+        or (desktop is not None and desktop < 90)
+    )
+
     return render_template(
         "step4.html",
         url=d["url"],
-        baseline_mobile=d.get("baseline_mobile"),
-        baseline_desktop=d.get("baseline_desktop"),
-        estimated=d.get("estimated_score"),
+        email=d.get("email", ""),
+        mobile=mobile,
+        desktop=desktop,
+        below_90=below_90,
         changes=d.get("changes", []),
         manual_fixes=d.get("manual_fixes", []),
         metrics=d.get("metrics", {}),
-        passed=passed,
-        retry_count=d.get("retry_count", 0),
-        threshold=SCORE_PASS_THRESHOLD,
+        email_sent_to=d.get("email_sent_to"),
     )
 
 
-@app.route("/reoptimize", methods=["POST"])
-def reoptimize():
-    d = sdata()
-    if "html" not in d:
-        return redirect(url_for("step1"))
-    # Feed the already-optimized HTML into the next pass so improvements compound.
-    if "optimized_html" in d:
-        d["html"] = d["optimized_html"]
-    d["retry_count"] = d.get("retry_count", 0) + 1
-    return redirect(url_for("step3"))
+@app.route("/api/send-report", methods=["POST"])
+def api_send_report():
+    """Email the full Step 4 report to the address captured at Step 1.
 
-
-@app.route("/force-proceed", methods=["POST"])
-def force_proceed():
+    Synchronous send (~1-3s on Gmail). Returns JSON for the AJAX button —
+    on success the button flips to '✓ Sent'; on failure the message comes
+    back inline.
+    """
     d = sdata()
     if "optimized_html" not in d:
-        return redirect(url_for("step1"))
-    d["forced"] = True
-    return redirect(url_for("step5"))
+        return jsonify({"error": "session expired — please start over"}), 400
+
+    to_addr = d.get("email")
+    if not to_addr:
+        return jsonify({"error": "no email captured in step 1"}), 400
+
+    try:
+        send_report(
+            to_addr=to_addr,
+            url=d["url"],
+            mobile_score=d.get("baseline_mobile"),
+            desktop_score=d.get("baseline_desktop"),
+            metrics=d.get("metrics", {}),
+            changes=d.get("changes", []),
+            manual_fixes=d.get("manual_fixes", []),
+            optimized_html=d.get("optimized_html", ""),
+        )
+        d["email_sent_to"] = to_addr
+        log.info("Report emailed to %s for %s", to_addr, d["url"])
+        return jsonify({"ok": True, "sent_to": to_addr})
+    except EmailNotConfigured as e:
+        log.warning("Email send attempted but Gmail is not configured: %s", e)
+        return jsonify({"error": str(e)}), 503
+    except EmailSendFailed as e:
+        return jsonify({"error": str(e)}), 502
 
 
 # ---- Step 5: Final code + copy ----
@@ -275,18 +342,12 @@ def step5():
     if "optimized_html" not in d:
         return redirect(url_for("step1"))
 
-    passed = (d.get("estimated_score") or 0) >= SCORE_PASS_THRESHOLD
-    forced = d.get("forced", False)
-    if not passed and not forced:
-        return redirect(url_for("step4"))
-
     return render_template(
         "step5.html",
         url=d["url"],
         html=d["optimized_html"],
-        estimated=d.get("estimated_score"),
-        passed=passed,
-        forced=forced,
+        mobile=d.get("baseline_mobile"),
+        desktop=d.get("baseline_desktop"),
     )
 
 
@@ -304,7 +365,5 @@ if __name__ == "__main__":
     print(f" Open in your browser:  http://localhost:{port}")
     print(" For production, use:   gunicorn wsgi:app")
     print("=" * 60 + "\n")
-    # 127.0.0.1 by default so the dev server isn't exposed on the LAN.
-    # Set FLASK_HOST=0.0.0.0 if you want LAN access during local testing.
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     app.run(host=host, port=port, debug=False)

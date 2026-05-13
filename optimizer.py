@@ -3,7 +3,6 @@ HTML optimization engine.
 
 - verify_html()           : basic validation of pasted HTML
 - HTMLOptimizer           : applies safe performance tweaks to HTML
-- estimate_after_score()  : rough heuristic for expected PageSpeed score after fixes
 - get_manual_fixes()      : returns remaining things the user must do manually
 """
 
@@ -350,61 +349,6 @@ class HTMLOptimizer:
         if not m:
             return src
         return f"{m.group(1)}webp{m.group(3)}"
-
-
-# ============================================================
-#  Score estimation
-# ============================================================
-
-# Approx Lighthouse points gained when a given change is applied.
-# These are rough heuristics — real numbers depend on site specifics.
-_SCORE_IMPACT = {
-    "viewport meta": 6,
-    "charset": 2,
-    "loading=\"lazy\"": 4,
-    "decoding=\"async\"": 1,
-    "defer to": 8,       # defer blocking scripts
-    "async to": 3,
-    "preload": 5,        # preload hero
-    "preconnect": 3,
-    "WebP": 10,          # if they actually convert the files
-    "picture": 0,        # per-image, already covered
-    "hero image with fetchpriority": 4,
-    "comments": 1,
-    "whitespace": 2,     # minification
-    "print stylesheet": 1,
-}
-
-
-def estimate_after_score(baseline: int, changes: list[str], audit) -> int:
-    """
-    Heuristic "after" score. Sums per-change impact, capped by:
-      * The headroom left to 100
-      * What opportunities PageSpeed actually flagged (addressing them gives back savings)
-    """
-    gain = 0.0
-    seen = set()
-    for change in changes:
-        for key, pts in _SCORE_IMPACT.items():
-            if key.lower() in change.lower() and key not in seen:
-                gain += pts
-                seen.add(key)
-                break
-
-    # Diminishing returns: each successive gain is smaller
-    effective_gain = gain * (1 - baseline / 200)  # softer as baseline rises
-
-    # Cap using PageSpeed opportunities: if they said "saves 1.5s" total and we addressed them,
-    # scale our gain accordingly
-    if audit and audit.get("opportunities"):
-        total_savings_ms = sum(o["savings_ms"] for o in audit["opportunities"])
-        if total_savings_ms > 0:
-            # 3000ms of addressable savings ~= ~20 score points; roughly linear
-            savings_cap = min(25, total_savings_ms / 150)
-            effective_gain = min(effective_gain, savings_cap * 1.2)
-
-    estimated = int(round(baseline + effective_gain))
-    return max(0, min(100, estimated))
 
 
 # ============================================================

@@ -4,8 +4,14 @@
 #   1. Push this repo to GitHub.
 #   2. Go to https://dashboard.render.com/blueprints and click "New Blueprint".
 #   3. Connect this repo. Render will pick up render.yaml automatically.
-#   4. In the Render dashboard, set the PAGESPEED_API_KEY env var (Settings → Environment).
+#   4. In the Render dashboard (Environment tab), set:
+#        PAGESPEED_API_KEY     — Google PageSpeed Insights API key
+#        GMAIL_USER            — your full Gmail address (e.g. seo.reports@gmail.com)
+#        GMAIL_APP_PASSWORD    — 16-char App Password from myaccount.google.com/apppasswords
+#        GMAIL_FROM_NAME       — display name for outgoing emails (e.g. SEO Optimizer Wizard)
 #   5. Click Deploy. You'll get a URL like https://optimizer-wizard.onrender.com.
+#
+# Gmail setup details: see "Email setup (Gmail)" in README.md.
 
 services:
   - type: web
@@ -20,6 +26,12 @@ services:
     envVars:
       - key: PAGESPEED_API_KEY
         sync: false           # set this manually in the Render dashboard
+      - key: GMAIL_USER
+        sync: false           # set this manually — your Gmail sender address
+      - key: GMAIL_APP_PASSWORD
+        sync: false           # set this manually — NEVER commit; rotate via Google account
+      - key: GMAIL_FROM_NAME
+        sync: false           # display name like "SEO Optimizer Wizard"
       - key: FLASK_SECRET_KEY
         generateValue: true   # Render auto-generates a stable random value
       - key: PYTHON_VERSION
