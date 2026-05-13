@@ -1,17 +1,27 @@
 {% extends "base.html" %}
 {% set current_step = 1 %}
-{% block title %}Step 1 — Enter URL{% endblock %}
+{% block title %}Step 1 — Enter URL & Email{% endblock %}
 
 {% block content %}
 <div class="card">
-  <h1>Step 1 · Enter your website URL</h1>
-  <p class="lead">We'll audit this URL with Google PageSpeed Insights to establish a baseline score.</p>
+  <h1>Step 1 · Enter your website URL and email</h1>
+  <p class="lead">
+    We'll audit this URL with Google PageSpeed Insights to establish a baseline score.
+    The full report (with the perfect solution to reach 90+) will be sent to your email on request.
+  </p>
 
   <form method="POST" class="form">
     <label for="url" class="label">Website URL</label>
-    <input type="text" id="url" name="url" placeholder="https://example.com" autofocus
-           autocomplete="off" spellcheck="false" required>
+    <input type="text" id="url" name="url" placeholder="https://example.com"
+           value="{{ url or '' }}" autofocus
+           autocomplete="url" spellcheck="false" required>
     <div class="hint">Include <code>https://</code>. If you skip it, we'll add it.</div>
+
+    <label for="email" class="label" style="margin-top:18px;">Your email address</label>
+    <input type="email" id="email" name="email" placeholder="you@example.com"
+           value="{{ email or '' }}"
+           autocomplete="email" spellcheck="false" required>
+    <div class="hint">The full report (scores, automatic changes, and step-by-step manual fixes) will be sent here when you click <em>Email me the report</em> on Step 4.</div>
 
     <div class="actions">
       <button type="submit" class="btn primary">Next →</button>

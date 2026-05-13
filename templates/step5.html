@@ -5,14 +5,12 @@
 {% block content %}
 <div class="card">
   <h1>Step 5 · Your optimized HTML</h1>
-  {% if passed %}
-    <p class="verdict pass">✓ Estimated PageSpeed score: <strong>{{ estimated }}</strong> · Ready to deploy.</p>
-  {% elif forced %}
-    <p class="verdict fail">
-      ⚠ You chose to proceed with an estimated score of {{ estimated }}.
-      Address the manual fixes from the previous step on your server to reach 90+.
-    </p>
-  {% endif %}
+
+  <p class="lead">
+    Live PageSpeed scores for <strong>{{ url }}</strong>:
+    Mobile <strong class="{{ 'good' if (mobile or 0) >= 90 else 'bad' if (mobile or 0) < 50 else 'mid' }}">{{ mobile if mobile is not none else '—' }}</strong>
+    · Desktop <strong class="{{ 'good' if (desktop or 0) >= 90 else 'bad' if (desktop or 0) < 50 else 'mid' }}">{{ desktop if desktop is not none else '—' }}</strong>
+  </p>
 
   <div class="toolbar">
     <button id="copyBtn" class="btn primary">📋 Copy code</button>
@@ -30,7 +28,7 @@
     <h2>Next steps</h2>
     <ol>
       <li><strong>Copy</strong> the code above and replace your live HTML with it. <strong>Test on staging first.</strong></li>
-      <li>Convert your site's images to WebP (see manual fixes on the previous step). Upload the new .webp files to the paths referenced in the <code>&lt;picture&gt;</code> tags.</li>
+      <li>Convert your site's images to WebP (see manual fixes on Step 4). Upload the new .webp files to the paths referenced in the <code>&lt;picture&gt;</code> tags.</li>
       <li>Apply server-side fixes (gzip/brotli, cache headers, CDN) from the manual fixes list.</li>
       <li>Click <em>Re-test at pagespeed.web.dev</em> above to verify the real score.</li>
     </ol>

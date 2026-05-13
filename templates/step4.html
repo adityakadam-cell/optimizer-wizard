@@ -5,53 +5,63 @@
 {% block content %}
 <div class="card">
   <h1>Step 4 · Review results</h1>
-  <p class="lead">URL audited: <strong>{{ url }}</strong>
-    {% if retry_count > 0 %}<span class="badge">Re-optimize pass #{{ retry_count }}</span>{% endif %}
-  </p>
+  <p class="lead">URL audited: <strong>{{ url }}</strong></p>
+
+  <h2 class="section-h">Live PageSpeed scores</h2>
+  <p class="hint" style="margin-top:-6px;">Fetched directly from
+    <a href="https://pagespeed.web.dev/analysis?url={{ url }}" target="_blank" rel="noopener">pagespeed.web.dev</a>
+    for your live URL.</p>
 
   <div class="scoreboard">
     <div class="score-card">
-      <div class="score-label">Baseline (Mobile)</div>
-      <div class="score-value {{ 'good' if (baseline_mobile or 0) >= 90 else 'bad' if (baseline_mobile or 0) < 50 else 'mid' }}">
-        {{ baseline_mobile if baseline_mobile is not none else '—' }}
+      <div class="score-label">Mobile</div>
+      <div class="score-value {{ 'good' if (mobile or 0) >= 90 else 'bad' if (mobile or 0) < 50 else 'mid' }}">
+        {{ mobile if mobile is not none else '—' }}
       </div>
+      <div class="score-sub">out of 100</div>
     </div>
     <div class="score-card">
-      <div class="score-label">Baseline (Desktop)</div>
-      <div class="score-value {{ 'good' if (baseline_desktop or 0) >= 90 else 'bad' if (baseline_desktop or 0) < 50 else 'mid' }}">
-        {{ baseline_desktop if baseline_desktop is not none else '—' }}
+      <div class="score-label">Desktop</div>
+      <div class="score-value {{ 'good' if (desktop or 0) >= 90 else 'bad' if (desktop or 0) < 50 else 'mid' }}">
+        {{ desktop if desktop is not none else '—' }}
       </div>
-    </div>
-    <div class="score-arrow">→</div>
-    <div class="score-card prediction">
-      <div class="score-label">Estimated after optimization</div>
-      <div class="score-value {{ 'good' if estimated >= 90 else 'bad' if estimated < 50 else 'mid' }}">
-        {{ estimated }}
-      </div>
+      <div class="score-sub">out of 100</div>
     </div>
   </div>
 
-  <p class="estimate-note">
-    <small>
-      <strong>How the estimate is computed:</strong> the baseline is the real PageSpeed score of your live URL.
-      The "after" score adds heuristic point-gains for each optimisation applied, capped by the savings PageSpeed
-      actually reported as addressable. <strong>It is an estimate, not a verified score.</strong>
-      To get a verified score, deploy the optimized HTML and re-run the wizard with your URL.
-    </small>
-  </p>
-
-  {% if passed %}
-    <div class="verdict pass">
-      ✓ Estimated score {{ estimated }} meets the {{ threshold }}+ threshold.
+  {% if below_90 %}
+    <div class="verdict fail">
+      ✗ Below 90 on mobile or desktop. Apply the perfect solution below to reach 90+.
     </div>
   {% else %}
-    <div class="verdict fail">
-      ✗ Estimated score {{ estimated }} is below the {{ threshold }}+ threshold.
-      Address the manual fixes below and/or run another optimization pass.
+    <div class="verdict pass">
+      ✓ Already at 90+ on both mobile and desktop. The fixes below are optional tune-ups.
     </div>
   {% endif %}
 
-  <h2>What was changed automatically</h2>
+  {% if metrics %}
+  <h2 class="section-h">Core Web Vitals (mobile)</h2>
+  <table class="metrics-table">
+    {% set metric_labels = {
+      'first-contentful-paint': 'First Contentful Paint',
+      'largest-contentful-paint': 'Largest Contentful Paint (LCP)',
+      'total-blocking-time': 'Total Blocking Time (TBT)',
+      'cumulative-layout-shift': 'Cumulative Layout Shift (CLS)',
+      'speed-index': 'Speed Index',
+      'interactive': 'Time to Interactive',
+    } %}
+    {% for mid, label in metric_labels.items() %}
+      {% if mid in metrics %}
+        <tr>
+          <td>{{ label }}</td>
+          <td class="metric-value">{{ metrics[mid].value or '—' }}</td>
+        </tr>
+      {% endif %}
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2 class="section-h">What was changed automatically</h2>
   {% if changes %}
     <ul class="changes">
       {% for c in changes %}<li>{{ c }}</li>{% endfor %}
@@ -60,8 +70,17 @@
     <p class="hint">No changes were applied — the HTML may already be well-optimized.</p>
   {% endif %}
 
-  <h2>Manual fixes still required</h2>
-  <p>These items cannot be fixed from inside the HTML file alone — they need server, CDN, or build-tool changes on your end. Click any fix to expand step-by-step instructions for your hosting environment.</p>
+  <h2 class="section-h">
+    The perfect solution
+    {% if below_90 %}<span class="badge">to reach 90+</span>{% endif %}
+  </h2>
+  <p>
+    {% if below_90 %}
+      Each fix below addresses something PageSpeed flagged on your site. Apply them along with the optimized HTML to reach 90+. Click any fix to expand the step-by-step instructions for your hosting environment.
+    {% else %}
+      Your site already scores 90+ on both mobile and desktop. The items below are optional best-practice improvements.
+    {% endif %}
+  </p>
 
   <div class="manual-fixes-list">
     {% for f in manual_fixes %}
@@ -129,21 +148,68 @@
     {% endfor %}
   </div>
 
+  <!-- Email me the report -->
+  <div class="email-row">
+    <div class="email-row-inner">
+      <div class="email-row-text">
+        <strong>📧 Email me the full report</strong>
+        <div class="hint">
+          Sends the scores, automatic changes, the perfect solution, AND the optimized HTML
+          (as an attachment) to <strong>{{ email }}</strong>.
+        </div>
+      </div>
+      <button id="emailBtn" class="btn primary"
+              {% if email_sent_to %}data-already-sent="{{ email_sent_to }}"{% endif %}>
+        {% if email_sent_to %}✓ Sent to {{ email_sent_to }}{% else %}Send me on email{% endif %}
+      </button>
+    </div>
+    <div id="emailStatus" class="email-status" style="display:none;"></div>
+  </div>
+
   <div class="actions-row">
     <a href="{{ url_for('step2') }}" class="btn">← Edit HTML</a>
-
-    {% if passed %}
-      <a href="{{ url_for('step5') }}" class="btn primary">Next — Get optimized code →</a>
-    {% else %}
-      <form method="POST" action="{{ url_for('reoptimize') }}" style="display:inline">
-        <button type="submit" class="btn primary">Re-optimize ({{ retry_count + 1 }}/3)</button>
-      </form>
-      {% if retry_count >= 2 %}
-        <form method="POST" action="{{ url_for('force_proceed') }}" style="display:inline">
-          <button type="submit" class="btn">Proceed anyway →</button>
-        </form>
-      {% endif %}
-    {% endif %}
+    <a href="{{ url_for('step5') }}" class="btn primary">Next — Get optimized code →</a>
   </div>
 </div>
+
+<script>
+  const emailBtn = document.getElementById('emailBtn');
+  const statusBox = document.getElementById('emailStatus');
+
+  function showStatus(message, kind) {
+    statusBox.textContent = message;
+    statusBox.className = 'email-status ' + kind;  // 'success' | 'error'
+    statusBox.style.display = 'block';
+  }
+
+  emailBtn.addEventListener('click', async () => {
+    // Once successfully sent in this session, button is decorative.
+    if (emailBtn.dataset.alreadySent) return;
+
+    const originalLabel = emailBtn.textContent;
+    emailBtn.disabled = true;
+    emailBtn.textContent = 'Sending…';
+    statusBox.style.display = 'none';
+
+    try {
+      const resp = await fetch('{{ url_for("api_send_report") }}', { method: 'POST' });
+      const data = await resp.json();
+
+      if (data.ok) {
+        emailBtn.textContent = '✓ Sent to ' + data.sent_to;
+        emailBtn.dataset.alreadySent = data.sent_to;
+        emailBtn.classList.add('success');
+        showStatus('Report sent. Check your inbox (and spam folder, just in case).', 'success');
+      } else {
+        emailBtn.disabled = false;
+        emailBtn.textContent = originalLabel;
+        showStatus('Could not send: ' + (data.error || 'unknown error'), 'error');
+      }
+    } catch (err) {
+      emailBtn.disabled = false;
+      emailBtn.textContent = originalLabel;
+      showStatus('Network error: ' + err, 'error');
+    }
+  });
+</script>
 {% endblock %}
