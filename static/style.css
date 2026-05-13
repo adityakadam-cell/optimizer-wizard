@@ -430,3 +430,95 @@ textarea {
   color: #888;
   font-size: 13px;
 }
+
+/* ---------- Step 4 additions (email row, metrics, section headings) ---------- */
+.section-h {
+  margin-top: 28px;
+  margin-bottom: 10px;
+  font-size: 18px;
+  color: #1a1a1a;
+}
+
+.score-sub {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.metrics-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 14px;
+  color: #374151;
+}
+.metrics-table tr:last-child td { border-bottom: 0; }
+.metrics-table td.metric-value {
+  text-align: right;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Email me the report box */
+.email-row {
+  margin: 28px 0 8px 0;
+  padding: 18px 20px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 10px;
+}
+.email-row-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.email-row-text {
+  flex: 1;
+  min-width: 240px;
+}
+.email-row-text strong {
+  font-size: 15px;
+  color: #4c1d95;
+}
+.email-row-text .hint {
+  color: #6b21a8;
+  margin-top: 4px;
+}
+.email-status {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.email-status.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+.email-status.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Disabled state for the email button while it's sending */
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Inline score color text on step 5 headline */
+strong.good { color: #10a152; }
+strong.mid  { color: #d97706; }
+strong.bad  { color: #c0392b; }
