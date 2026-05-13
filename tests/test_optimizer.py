@@ -1,8 +1,8 @@
 """
 Smoke tests for the optimizer wizard.
 
-These run offline — no PageSpeed API calls. They cover the HTML optimizer,
-verifier, score estimator, and Flask wiring.
+These run offline — no PageSpeed API calls, no SMTP. They cover the HTML
+optimizer, verifier, manual-fixes builder, and Flask wiring.
 """
 
 import pytest
@@ -10,7 +10,6 @@ import pytest
 from optimizer import (
     HTMLOptimizer,
     verify_html,
-    estimate_after_score,
     get_manual_fixes,
 )
 
@@ -58,26 +57,13 @@ def test_optimizer_applies_expected_changes(sample_html):
     opt = HTMLOptimizer(sample_html, "https://example.com")
     out = opt.optimize()
 
-    # Output is non-empty HTML
     assert "<html" in out.lower()
-
-    # Lazy load was added to the non-hero image
     assert 'loading="lazy"' in out
-
-    # Hero image got fetchpriority=high
     assert 'fetchpriority="high"' in out
-
-    # Defer was added to a non-analytics script
     assert "defer" in out
-
-    # Picture wrapper for raster image with WebP source
     assert "<picture" in out
     assert "image/webp" in out
-
-    # Comment was stripped
     assert "old comment" not in out
-
-    # Changes list has entries
     assert len(opt.changes) >= 5
 
 
@@ -89,22 +75,20 @@ def test_optimizer_preserves_analytics_scripts(sample_html):
     out = opt.optimize()
     soup = BeautifulSoup(out, "html.parser")
 
-    # Find the GTM script tag specifically and check it has neither defer nor async
     gtm_scripts = [
         s for s in soup.find_all("script")
         if "googletagmanager" in (s.get("src") or "")
     ]
-    assert len(gtm_scripts) == 1, "expected exactly one GTM script in output"
+    assert len(gtm_scripts) == 1
     gtm = gtm_scripts[0]
-    assert not gtm.has_attr("defer"), "GTM script must not be deferred"
-    assert not gtm.has_attr("async"), "GTM script must not be async (in non-aggressive mode)"
+    assert not gtm.has_attr("defer")
+    assert not gtm.has_attr("async")
 
-    # Sanity: a non-analytics script SHOULD have defer
     other_scripts = [
         s for s in soup.find_all("script")
         if "googletagmanager" not in (s.get("src") or "") and s.get("src")
     ]
-    assert any(s.has_attr("defer") for s in other_scripts), "non-analytics scripts should be deferred"
+    assert any(s.has_attr("defer") for s in other_scripts)
 
 
 def test_optimizer_adds_doctype_when_missing():
@@ -112,36 +96,6 @@ def test_optimizer_adds_doctype_when_missing():
     opt = HTMLOptimizer(html, "https://example.com")
     out = opt.optimize()
     assert out.lstrip().lower().startswith("<!doctype")
-
-
-def test_optimizer_aggressive_minifies_whitespace():
-    html = """<!DOCTYPE html><html><head></head><body>
-    <p>hello       world</p>
-    </body></html>"""
-    opt = HTMLOptimizer(html, "https://example.com", aggressive=True)
-    out = opt.optimize()
-    # Multiple internal spaces should collapse to one
-    assert "hello world" in out
-    assert "hello       world" not in out
-
-
-# ----- score estimator -----
-
-def test_estimate_score_caps_at_100():
-    fake_changes = [f"change {i}" for i in range(50)]
-    score = estimate_after_score(50, fake_changes, None)
-    assert 0 <= score <= 100
-
-
-def test_estimate_score_never_below_zero():
-    score = estimate_after_score(0, [], None)
-    assert score >= 0
-
-
-def test_estimate_score_baseline_with_no_changes():
-    score = estimate_after_score(85, [], None)
-    # No changes means no gain — score should be ~baseline
-    assert score == 85
 
 
 # ----- manual fixes table -----
@@ -160,6 +114,20 @@ def test_manual_fixes_dedupes_by_title():
     assert len(titles) == len(set(titles))
 
 
+def test_manual_fixes_include_what_why_how_verify_keys():
+    """Email composer and step4 template depend on these keys being present."""
+    fixes = get_manual_fixes(None, [])
+    assert len(fixes) > 0
+    for f in fixes:
+        assert "title" in f
+        assert "category" in f
+        assert "what" in f
+        assert "why" in f
+        assert "how" in f
+        assert "verify" in f
+        assert "index" in f
+
+
 # ----- Flask routes -----
 
 @pytest.fixture
@@ -176,10 +144,13 @@ def test_root_redirects_to_step1(client):
     assert "/step1" in r.location
 
 
-def test_step1_renders(client):
+def test_step1_renders_with_url_and_email_fields(client):
     r = client.get("/step1")
     assert r.status_code == 200
-    assert b"<form" in r.data
+    # Both inputs must be present — email is now a required field
+    assert b'name="url"' in r.data
+    assert b'name="email"' in r.data
+    assert b'type="email"' in r.data
 
 
 def test_healthz(client):
@@ -193,11 +164,36 @@ def test_step5_redirects_when_no_data(client):
     assert r.status_code == 302
 
 
-def test_step1_to_step2_flow(client):
+def test_step1_rejects_missing_email(client):
     r = client.post("/step1", data={"url": "example.com"}, follow_redirects=False)
+    # Should NOT redirect to step2 — should re-render step1 with a flash
+    assert r.status_code == 200
+    assert b"email" in r.data.lower()
+
+
+def test_step1_rejects_invalid_email(client):
+    r = client.post("/step1", data={
+        "url": "example.com",
+        "email": "not-an-email",
+    }, follow_redirects=False)
+    assert r.status_code == 200
+
+
+def test_step1_to_step2_flow_with_email(client):
+    r = client.post("/step1", data={
+        "url": "example.com",
+        "email": "user@example.com",
+    }, follow_redirects=False)
     assert r.status_code == 302
     assert "/step2" in r.location
 
     r = client.get("/step2")
     assert r.status_code == 200
     assert b"<textarea" in r.data
+
+
+def test_send_report_requires_session(client):
+    """Calling /api/send-report without a completed wizard returns 400."""
+    r = client.post("/api/send-report")
+    assert r.status_code == 400
+    assert b"session" in r.data.lower() or b"start over" in r.data.lower()
